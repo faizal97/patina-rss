@@ -8,10 +8,10 @@ set -e
 # 1. Bumps the version
 # 2. Commits the version change
 # 3. Creates a git tag
-# 4. Builds the app in release mode
-# 5. Packages it as a zip
+# 4. Builds the app for all architectures (arm64, x86_64, universal)
+# 5. Packages each as a zip
 # 6. Pushes to GitHub
-# 7. Creates a GitHub release with the binary
+# 7. Creates a GitHub release with all binaries
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -21,18 +21,19 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 BUILD_DIR="/tmp/patina-build"
+RUST_TARGET_DIR="$PROJECT_ROOT/patina-core/target"
 
 usage() {
     echo "Usage: $0 [major|minor|patch]"
     echo ""
-    echo "Creates a new release with:"
-    echo "  - Version bump in Cargo.toml and project.yml"
-    echo "  - Git commit and tag"
-    echo "  - Release build of the app"
-    echo "  - GitHub release with binary attached"
+    echo "Creates a new release with builds for:"
+    echo "  - Apple Silicon (arm64)"
+    echo "  - Intel (x86_64)"
+    echo "  - Universal (both architectures)"
     echo ""
     echo "Examples:"
     echo "  $0 patch  # 1.0.0 -> 1.0.1"
@@ -83,38 +84,102 @@ check_gh_cli() {
     fi
 }
 
-# Build the app
-build_app() {
-    echo -e "${BLUE}Building Rust library (release)...${NC}"
-    cd "$PROJECT_ROOT/patina-core"
-    cargo build --release
+# Check Rust targets are installed
+check_rust_targets() {
+    echo -e "${BLUE}Checking Rust targets...${NC}"
 
-    echo -e "${BLUE}Generating Xcode project...${NC}"
-    cd "$PROJECT_ROOT/Patina"
-    xcodegen generate
-
-    echo -e "${BLUE}Building Swift app (release)...${NC}"
-    xcodebuild -scheme Patina -configuration Release -arch arm64 ONLY_ACTIVE_ARCH=YES SYMROOT="$BUILD_DIR" build 2>&1 | grep -E "(error:|warning:|BUILD|Compiling|Linking)" || true
-
-    if [ ! -d "$BUILD_DIR/Release/Patina.app" ]; then
-        echo -e "${RED}Error: Build failed. Patina.app not found.${NC}"
-        exit 1
+    if ! rustup target list --installed | grep -q "aarch64-apple-darwin"; then
+        echo -e "${YELLOW}Installing aarch64-apple-darwin target...${NC}"
+        rustup target add aarch64-apple-darwin
     fi
 
-    echo -e "${GREEN}✓ Build succeeded${NC}"
+    if ! rustup target list --installed | grep -q "x86_64-apple-darwin"; then
+        echo -e "${YELLOW}Installing x86_64-apple-darwin target...${NC}"
+        rustup target add x86_64-apple-darwin
+    fi
+
+    echo -e "${GREEN}✓ Rust targets ready${NC}"
 }
 
-# Package the app
+# Build Rust library for a specific target
+build_rust() {
+    local target=$1
+    echo -e "${CYAN}  → Building Rust for $target...${NC}"
+    cd "$PROJECT_ROOT/patina-core"
+    cargo build --release --target "$target" 2>&1 | grep -E "(Compiling|Finished)" || true
+}
+
+# Create universal Rust library
+create_universal_rust_lib() {
+    echo -e "${CYAN}  → Creating universal Rust library...${NC}"
+    mkdir -p "$RUST_TARGET_DIR/universal-apple-darwin/release"
+    lipo -create \
+        "$RUST_TARGET_DIR/aarch64-apple-darwin/release/libpatina_core.a" \
+        "$RUST_TARGET_DIR/x86_64-apple-darwin/release/libpatina_core.a" \
+        -output "$RUST_TARGET_DIR/universal-apple-darwin/release/libpatina_core.a"
+}
+
+# Build Swift app for a specific architecture
+build_swift_app() {
+    local arch=$1
+    local rust_lib_path=$2
+    local output_dir="$BUILD_DIR/$arch"
+
+    echo -e "${CYAN}  → Building Swift app for $arch...${NC}"
+
+    cd "$PROJECT_ROOT/Patina"
+
+    # Build with specific library path
+    xcodebuild -scheme Patina \
+        -configuration Release \
+        -arch "$arch" \
+        ONLY_ACTIVE_ARCH=YES \
+        SYMROOT="$output_dir" \
+        LIBRARY_SEARCH_PATHS="$rust_lib_path" \
+        build 2>&1 | grep -E "(error:|BUILD SUCCEEDED|BUILD FAILED)" || true
+
+    if [ ! -d "$output_dir/Release/Patina.app" ]; then
+        echo -e "${RED}Error: Build failed for $arch. Patina.app not found.${NC}"
+        return 1
+    fi
+}
+
+# Build universal Swift app by combining arm64 and x86_64
+build_universal_app() {
+    local output_dir="$BUILD_DIR/universal"
+
+    echo -e "${CYAN}  → Creating universal app bundle...${NC}"
+
+    mkdir -p "$output_dir/Release"
+
+    # Copy the arm64 app as base
+    cp -R "$BUILD_DIR/arm64/Release/Patina.app" "$output_dir/Release/"
+
+    # Create universal binary using lipo
+    lipo -create \
+        "$BUILD_DIR/arm64/Release/Patina.app/Contents/MacOS/Patina" \
+        "$BUILD_DIR/x86_64/Release/Patina.app/Contents/MacOS/Patina" \
+        -output "$output_dir/Release/Patina.app/Contents/MacOS/Patina"
+
+    # Re-sign the universal app
+    codesign --force --sign - "$output_dir/Release/Patina.app"
+}
+
+# Package app as zip
 package_app() {
-    local version=$1
-    local zip_name="Patina-v${version}-macos-arm64.zip"
+    local arch=$1
+    local version=$2
+    local zip_name="Patina-v${version}-macos-${arch}.zip"
+    local app_dir="$BUILD_DIR/$arch/Release"
 
-    echo -e "${BLUE}Packaging app...${NC}"
-    cd "$BUILD_DIR/Release"
+    echo -e "${CYAN}  → Packaging $arch...${NC}"
+
+    cd "$app_dir"
     rm -f "$zip_name"
-    zip -r "$zip_name" Patina.app
+    zip -r -q "$zip_name" Patina.app
 
-    echo -e "${GREEN}✓ Created $zip_name ($(du -h "$zip_name" | cut -f1))${NC}"
+    local size=$(du -h "$zip_name" | cut -f1)
+    echo -e "${GREEN}    ✓ $zip_name ($size)${NC}"
 }
 
 # Main
@@ -140,6 +205,7 @@ echo ""
 # Pre-flight checks
 echo -e "${YELLOW}Running pre-flight checks...${NC}"
 check_gh_cli
+check_rust_targets
 check_clean_working_directory
 check_main_branch
 echo -e "${GREEN}✓ All checks passed${NC}"
@@ -167,14 +233,39 @@ git tag -a "v$NEW_VERSION" -m "v$NEW_VERSION"
 echo -e "${GREEN}✓ Created tag v$NEW_VERSION${NC}"
 echo ""
 
-# Build
-echo -e "${YELLOW}Building release...${NC}"
-build_app
+# Clean build directory
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+
+# Build Rust libraries
+echo -e "${YELLOW}Building Rust libraries...${NC}"
+build_rust "aarch64-apple-darwin"
+build_rust "x86_64-apple-darwin"
+create_universal_rust_lib
+echo -e "${GREEN}✓ Rust libraries built${NC}"
 echo ""
 
-# Package
-echo -e "${YELLOW}Packaging...${NC}"
-package_app "$NEW_VERSION"
+# Generate Xcode project
+echo -e "${YELLOW}Generating Xcode project...${NC}"
+cd "$PROJECT_ROOT/Patina"
+xcodegen generate
+echo -e "${GREEN}✓ Xcode project generated${NC}"
+echo ""
+
+# Build Swift apps
+echo -e "${YELLOW}Building Swift apps...${NC}"
+build_swift_app "arm64" "$RUST_TARGET_DIR/aarch64-apple-darwin/release"
+build_swift_app "x86_64" "$RUST_TARGET_DIR/x86_64-apple-darwin/release"
+build_universal_app
+echo -e "${GREEN}✓ All Swift apps built${NC}"
+echo ""
+
+# Package apps
+echo -e "${YELLOW}Packaging apps...${NC}"
+package_app "arm64" "$NEW_VERSION"
+package_app "x86_64" "$NEW_VERSION"
+package_app "universal" "$NEW_VERSION"
+echo -e "${GREEN}✓ All apps packaged${NC}"
 echo ""
 
 # Push to GitHub
@@ -186,7 +277,10 @@ echo ""
 
 # Create GitHub release
 echo -e "${YELLOW}Creating GitHub release...${NC}"
-ZIP_PATH="$BUILD_DIR/Release/Patina-v${NEW_VERSION}-macos-arm64.zip"
+
+ZIP_ARM64="$BUILD_DIR/arm64/Release/Patina-v${NEW_VERSION}-macos-arm64.zip"
+ZIP_X86="$BUILD_DIR/x86_64/Release/Patina-v${NEW_VERSION}-macos-x86_64.zip"
+ZIP_UNIVERSAL="$BUILD_DIR/universal/Release/Patina-v${NEW_VERSION}-macos-universal.zip"
 
 gh release create "v$NEW_VERSION" \
     --title "Patina v$NEW_VERSION" \
@@ -194,19 +288,31 @@ gh release create "v$NEW_VERSION" \
 
 ### Downloads
 
-- **[Patina-v${NEW_VERSION}-macos-arm64.zip](https://github.com/faizal97/patina-rss/releases/download/v${NEW_VERSION}/Patina-v${NEW_VERSION}-macos-arm64.zip)** - macOS app (Apple Silicon)
+| Platform | Download | Size |
+|----------|----------|------|
+| 🍎 **Universal** (Recommended) | [Patina-v${NEW_VERSION}-macos-universal.zip](https://github.com/faizal97/patina-rss/releases/download/v${NEW_VERSION}/Patina-v${NEW_VERSION}-macos-universal.zip) | Works on all Macs |
+| Apple Silicon (M1/M2/M3/M4) | [Patina-v${NEW_VERSION}-macos-arm64.zip](https://github.com/faizal97/patina-rss/releases/download/v${NEW_VERSION}/Patina-v${NEW_VERSION}-macos-arm64.zip) | Optimized for Apple Silicon |
+| Intel | [Patina-v${NEW_VERSION}-macos-x86_64.zip](https://github.com/faizal97/patina-rss/releases/download/v${NEW_VERSION}/Patina-v${NEW_VERSION}-macos-x86_64.zip) | For Intel-based Macs |
 
 ### Installation
 
-1. Download the zip file above
-2. Extract and drag Patina.app to your Applications folder
-3. On first launch, right-click and select \"Open\" to bypass Gatekeeper
+1. Download the appropriate zip file for your Mac
+2. Extract and drag **Patina.app** to your Applications folder
+3. On first launch, right-click and select **\"Open\"** to bypass Gatekeeper
+
+### Which version should I download?
+
+- **Not sure?** Download the **Universal** version - it works on all Macs
+- **Apple Silicon Mac** (M1, M2, M3, M4): arm64 version is slightly smaller
+- **Intel Mac** (pre-2020): x86_64 version
 
 ---
 
-*Note: This app is signed locally and not notarized with Apple. You may need to allow it in System Preferences > Security & Privacy.*
+*Note: This app is signed locally and not notarized with Apple. You may need to allow it in System Preferences > Privacy & Security.*
 " \
-    "$ZIP_PATH"
+    "$ZIP_UNIVERSAL" \
+    "$ZIP_ARM64" \
+    "$ZIP_X86"
 
 echo ""
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"
@@ -214,4 +320,9 @@ echo -e "${GREEN}           Release v$NEW_VERSION Complete!         ${NC}"
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"
 echo ""
 echo "Release URL: https://github.com/faizal97/patina-rss/releases/tag/v$NEW_VERSION"
+echo ""
+echo "Artifacts:"
+echo "  - Patina-v${NEW_VERSION}-macos-universal.zip"
+echo "  - Patina-v${NEW_VERSION}-macos-arm64.zip"
+echo "  - Patina-v${NEW_VERSION}-macos-x86_64.zip"
 echo ""
