@@ -64,7 +64,7 @@ A native macOS RSS reader with an AI-powered Serendipity Mode that resurfaces fo
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/patina-rss.git
+git clone https://github.com/faizal97/patina-rss.git
 cd patina-rss
 ```
 

@@ -29,7 +29,7 @@ Thank you for your interest in contributing to Patina! This document provides gu
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/patina-rss.git
+   git clone https://github.com/faizal97/patina-rss.git
    cd patina-rss
    ```
 3. Generate the Xcode project:
@@ -150,7 +150,7 @@ When suggesting features:
 
 ## ❓ Questions?
 
-- Open a [GitHub Discussion](https://github.com/YOUR_USERNAME/patina-rss/discussions) for questions
+- Open a [GitHub Discussion](https://github.com/faizal97/patina-rss/discussions) for questions
 - Check existing issues and discussions first
 
 ## 📜 Code of Conduct
