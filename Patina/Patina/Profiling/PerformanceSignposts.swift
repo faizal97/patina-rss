@@ -85,10 +85,11 @@ enum PerformanceSignpost {
     ///   - operation: The async operation to measure
     /// - Returns: The result of the operation
     @discardableResult
+    @MainActor
     static func measure<T>(
         _ log: OSLog,
         name: StaticString,
-        operation: () async throws -> T
+        operation: @MainActor () async throws -> T
     ) async rethrows -> T {
         let id = begin(log, name: name)
         defer { end(log, name: name, id: id) }
@@ -102,10 +103,11 @@ enum PerformanceSignpost {
     ///   - operation: The operation to measure
     /// - Returns: The result of the operation
     @discardableResult
+    @MainActor
     static func measureSync<T>(
         _ log: OSLog,
         name: StaticString,
-        operation: () throws -> T
+        operation: @MainActor () throws -> T
     ) rethrows -> T {
         let id = begin(log, name: name)
         defer { end(log, name: name, id: id) }

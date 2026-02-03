@@ -72,13 +72,45 @@ targets:
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.network.client: true
 
+  PatinaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: PatinaTests
+    dependencies:
+      - target: Patina
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.patina.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_OBJC_BRIDGING_HEADER: $(PROJECT_DIR)/Patina/Patina-Bridging-Header.h
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(PROJECT_DIR)/../patina-core/target/release
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lpatina_core
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(PROJECT_DIR)/../generated
+      configs:
+        Debug:
+          LIBRARY_SEARCH_PATHS:
+            - $(inherited)
+            - $(PROJECT_DIR)/../patina-core/target/debug
+
 schemes:
   Patina:
     build:
       targets:
         Patina: all
+        PatinaTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - PatinaTests
     profile:
       config: Release
     archive:
