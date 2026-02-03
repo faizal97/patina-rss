@@ -1,0 +1,49 @@
+# Rust
+patina-core/target/
+Cargo.lock
+
+# Xcode
+Patina/*.xcodeproj/
+Patina/*.xcworkspace/
+Patina/xcuserdata/
+Patina/DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build
+build/
+*.o
+*.a
+
+# Temporary
+*.tmp
+*.log

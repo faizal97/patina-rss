@@ -1,0 +1,54 @@
+[package]
+name = "patina-core"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["lib", "staticlib"]
+name = "patina_core"
+
+[dependencies]
+# HTTP client for fetching feeds (latest)
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# RSS/Atom feed parsing (latest)
+feed-rs = "2.3"
+
+# OPML parsing (latest)
+opml = "1.1"
+
+# HTML parsing for feed discovery (latest)
+scraper = "0.22"
+
+# SQLite database (latest)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Async runtime (latest)
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# Date/time handling (latest)
+chrono = { version = "0.4", features = ["serde"] }
+
+# UniFFI for Swift bindings (latest)
+uniffi = { version = "0.28", features = ["cli"] }
+
+# Serialization (latest)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling (latest)
+thiserror = "2.0"
+
+# URL handling (latest)
+url = "2.5"
+
+[build-dependencies]
+uniffi = { version = "0.28", features = ["build"] }
+
+[dev-dependencies]
+tempfile = "3.15"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"

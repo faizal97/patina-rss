@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$CLAUDE_FILE_PATHS\" == *.rs* ]]; then cd \"$(dirname \"$CLAUDE_FILE_PATHS\" | head -1)\" && cargo fmt --quiet 2>/dev/null || true; fi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$CLAUDE_FILE_PATHS\" == *Cargo.lock* ]]; then echo 'BLOCKED: Cargo.lock should only be modified by cargo, not directly' >&2; exit 1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

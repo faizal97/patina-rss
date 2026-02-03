@@ -1,0 +1,4 @@
+module PatinaCoreFFI {
+    header "PatinaCoreFFI.h"
+    export *
+}

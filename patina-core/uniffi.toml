@@ -1,0 +1,3 @@
+[bindings.swift]
+generate_immutable_records = true
+module_name = "PatinaCore"

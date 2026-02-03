@@ -1,0 +1,2 @@
+// Minimal UDL - most types are defined via proc macros in Rust
+namespace patina_core {};
