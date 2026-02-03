@@ -62,24 +62,37 @@ pub fn parse_feed_content(content: &[u8], url: &str) -> Result<ParsedFeed, Patin
 
 /// Strip HTML tags and decode entities from a string
 pub fn clean_html(html: &str) -> String {
-    // Strip HTML tags
-    let mut result = String::new();
+    // Single pass: strip tags + normalize whitespace
+    // Pre-allocate since output will be smaller than input
+    let mut result = String::with_capacity(html.len());
     let mut in_tag = false;
+    let mut last_was_space = true; // Start true to skip leading whitespace
 
     for c in html.chars() {
         match c {
             '<' => in_tag = true,
             '>' => in_tag = false,
-            _ if !in_tag => result.push(c),
-            _ => {}
+            _ if in_tag => {}
+            c if c.is_whitespace() => {
+                if !last_was_space {
+                    result.push(' ');
+                    last_was_space = true;
+                }
+            }
+            c => {
+                result.push(c);
+                last_was_space = false;
+            }
         }
     }
 
-    // Decode HTML entities (handles &amp;, &lt;, &#123;, &#xAB;, etc.)
-    let decoded = html_escape::decode_html_entities(&result);
+    // Trim trailing space if present
+    if result.ends_with(' ') {
+        result.pop();
+    }
 
-    // Normalize whitespace
-    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+    // Decode HTML entities (handles &amp;, &lt;, &#123;, &#xAB;, etc.)
+    html_escape::decode_html_entities(&result).into_owned()
 }
 
 #[cfg(test)]
