@@ -43,6 +43,12 @@ thiserror = "2.0"
 # URL handling (latest)
 url = "2.5"
 
+# HTML entity decoding
+html-escape = "0.2"
+
+# Stop words for text processing
+stop-words = "0.8"
+
 [build-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
 

@@ -1,19 +1,7 @@
 use crate::storage::db::Database;
 use crate::PatinaError;
 use std::collections::HashMap;
-
-// Common stop words to filter out
-const STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
-    "from", "as", "is", "was", "are", "were", "been", "be", "have", "has", "had", "do", "does",
-    "did", "will", "would", "could", "should", "may", "might", "must", "shall", "can", "need",
-    "dare", "ought", "used", "it", "its", "this", "that", "these", "those", "i", "you", "he",
-    "she", "we", "they", "what", "which", "who", "whom", "where", "when", "why", "how", "all",
-    "each", "every", "both", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
-    "only", "own", "same", "so", "than", "too", "very", "just", "also", "now", "new", "one",
-    "two", "first", "last", "many", "much", "get", "got", "go", "going", "make", "made", "take",
-    "use", "using", "via", "about", "into", "over", "after", "before", "between", "through",
-];
+use stop_words::{get, LANGUAGE};
 
 /// Extract topics from article title and summary
 /// Returns a list of (topic, score) tuples
@@ -75,8 +63,9 @@ fn is_valid_topic_word(word: &str) -> bool {
         return false;
     }
 
-    // Must not be a stop word
-    if STOP_WORDS.contains(&word.as_ref()) {
+    // Must not be a stop word (uses comprehensive English stop word list)
+    let stop_words = get(LANGUAGE::English);
+    if stop_words.contains(&word.to_string()) {
         return false;
     }
 

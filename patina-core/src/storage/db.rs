@@ -1,7 +1,38 @@
 use crate::storage::models::{Article, Feed, ParsedArticle, ParsedFeed, ReadingPattern};
 use crate::PatinaError;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
 use std::sync::Mutex;
+
+/// Maps a database row to a Feed struct.
+/// Expected columns: id, title, url, site_url, last_fetched_at, created_at, unread_count
+fn map_feed_row(row: &Row) -> Result<Feed, rusqlite::Error> {
+    Ok(Feed {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        url: row.get(2)?,
+        site_url: row.get(3)?,
+        last_fetched_at: row.get(4)?,
+        created_at: row.get(5)?,
+        unread_count: row.get(6)?,
+    })
+}
+
+/// Maps a database row to an Article struct.
+/// Expected columns: id, feed_id, title, url, summary, published_at, fetched_at, is_read, read_at, feed_title
+fn map_article_row(row: &Row) -> Result<Article, rusqlite::Error> {
+    Ok(Article {
+        id: row.get(0)?,
+        feed_id: row.get(1)?,
+        title: row.get(2)?,
+        url: row.get(3)?,
+        summary: row.get(4)?,
+        published_at: row.get(5)?,
+        fetched_at: row.get(6)?,
+        is_read: row.get::<_, i32>(7)? != 0,
+        read_at: row.get(8)?,
+        feed_title: row.get(9)?,
+    })
+}
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -104,19 +135,7 @@ impl Database {
             "#,
         )?;
 
-        let feed = stmt
-            .query_row(params![id], |row| {
-                Ok(Feed {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    url: row.get(2)?,
-                    site_url: row.get(3)?,
-                    last_fetched_at: row.get(4)?,
-                    created_at: row.get(5)?,
-                    unread_count: row.get(6)?,
-                })
-            })
-            .optional()?;
+        let feed = stmt.query_row(params![id], map_feed_row).optional()?;
 
         Ok(feed)
     }
@@ -134,17 +153,7 @@ impl Database {
         )?;
 
         let feeds = stmt
-            .query_map([], |row| {
-                Ok(Feed {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    url: row.get(2)?,
-                    site_url: row.get(3)?,
-                    last_fetched_at: row.get(4)?,
-                    created_at: row.get(5)?,
-                    unread_count: row.get(6)?,
-                })
-            })?
+            .query_map([], map_feed_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(feeds)
@@ -168,19 +177,7 @@ impl Database {
             "#,
         )?;
 
-        let feed = stmt
-            .query_row(params![url], |row| {
-                Ok(Feed {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    url: row.get(2)?,
-                    site_url: row.get(3)?,
-                    last_fetched_at: row.get(4)?,
-                    created_at: row.get(5)?,
-                    unread_count: row.get(6)?,
-                })
-            })
-            .optional()?;
+        let feed = stmt.query_row(params![url], map_feed_row).optional()?;
 
         Ok(feed)
     }
@@ -246,22 +243,7 @@ impl Database {
             "#,
         )?;
 
-        let article = stmt
-            .query_row(params![id], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    feed_id: row.get(1)?,
-                    title: row.get(2)?,
-                    url: row.get(3)?,
-                    summary: row.get(4)?,
-                    published_at: row.get(5)?,
-                    fetched_at: row.get(6)?,
-                    is_read: row.get::<_, i32>(7)? != 0,
-                    read_at: row.get(8)?,
-                    feed_title: row.get(9)?,
-                })
-            })
-            .optional()?;
+        let article = stmt.query_row(params![id], map_article_row).optional()?;
 
         Ok(article)
     }
@@ -281,20 +263,7 @@ impl Database {
         )?;
 
         let articles = stmt
-            .query_map(params![feed_id], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    feed_id: row.get(1)?,
-                    title: row.get(2)?,
-                    url: row.get(3)?,
-                    summary: row.get(4)?,
-                    published_at: row.get(5)?,
-                    fetched_at: row.get(6)?,
-                    is_read: row.get::<_, i32>(7)? != 0,
-                    read_at: row.get(8)?,
-                    feed_title: row.get(9)?,
-                })
-            })?
+            .query_map(params![feed_id], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(articles)
@@ -315,20 +284,7 @@ impl Database {
         )?;
 
         let articles = stmt
-            .query_map([], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    feed_id: row.get(1)?,
-                    title: row.get(2)?,
-                    url: row.get(3)?,
-                    summary: row.get(4)?,
-                    published_at: row.get(5)?,
-                    fetched_at: row.get(6)?,
-                    is_read: row.get::<_, i32>(7)? != 0,
-                    read_at: row.get(8)?,
-                    feed_title: row.get(9)?,
-                })
-            })?
+            .query_map([], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(articles)
@@ -350,20 +306,7 @@ impl Database {
         )?;
 
         let articles = stmt
-            .query_map([limit], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    feed_id: row.get(1)?,
-                    title: row.get(2)?,
-                    url: row.get(3)?,
-                    summary: row.get(4)?,
-                    published_at: row.get(5)?,
-                    fetched_at: row.get(6)?,
-                    is_read: row.get::<_, i32>(7)? != 0,
-                    read_at: row.get(8)?,
-                    feed_title: row.get(9)?,
-                })
-            })?
+            .query_map([limit], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(articles)
@@ -492,20 +435,7 @@ impl Database {
             )?;
 
             let articles = stmt
-                .query_map(params![limit], |row| {
-                    Ok(Article {
-                        id: row.get(0)?,
-                        feed_id: row.get(1)?,
-                        title: row.get(2)?,
-                        url: row.get(3)?,
-                        summary: row.get(4)?,
-                        published_at: row.get(5)?,
-                        fetched_at: row.get(6)?,
-                        is_read: row.get::<_, i32>(7)? != 0,
-                        read_at: row.get(8)?,
-                        feed_title: row.get(9)?,
-                    })
-                })?
+                .query_map(params![limit], map_article_row)?
                 .collect::<Result<Vec<_>, _>>()?;
 
             return Ok(articles);
@@ -541,20 +471,7 @@ impl Database {
         let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
 
         let articles = stmt
-            .query_map(refs.as_slice(), |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    feed_id: row.get(1)?,
-                    title: row.get(2)?,
-                    url: row.get(3)?,
-                    summary: row.get(4)?,
-                    published_at: row.get(5)?,
-                    fetched_at: row.get(6)?,
-                    is_read: row.get::<_, i32>(7)? != 0,
-                    read_at: row.get(8)?,
-                    feed_title: row.get(9)?,
-                })
-            })?
+            .query_map(refs.as_slice(), map_article_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(articles)

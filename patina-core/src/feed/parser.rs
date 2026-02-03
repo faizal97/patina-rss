@@ -1,14 +1,11 @@
+use crate::feed::http::create_client;
 use crate::storage::models::{ParsedArticle, ParsedFeed};
 use crate::PatinaError;
 use feed_rs::parser;
 
 /// Fetch a feed from a URL and parse it
 pub fn fetch_and_parse_feed(url: &str) -> Result<ParsedFeed, PatinaError> {
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("Patina RSS Reader/1.0")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-
+    let client = create_client()?;
     let response = client.get(url).send()?;
     let bytes = response.bytes()?;
 
@@ -66,61 +63,26 @@ pub fn parse_feed_content(content: &[u8], url: &str) -> Result<ParsedFeed, Patin
     })
 }
 
-/// Strip HTML tags from a string (simple implementation)
+/// Strip HTML tags and decode entities from a string
 fn clean_html(html: &str) -> String {
+    // Strip HTML tags
     let mut result = String::new();
     let mut in_tag = false;
-    let mut in_entity = false;
-    let mut entity = String::new();
 
     for c in html.chars() {
-        if c == '<' {
-            in_tag = true;
-        } else if c == '>' {
-            in_tag = false;
-        } else if c == '&' && !in_tag {
-            in_entity = true;
-            entity.clear();
-        } else if c == ';' && in_entity {
-            in_entity = false;
-            // Decode common entities
-            match entity.as_str() {
-                "amp" => result.push('&'),
-                "lt" => result.push('<'),
-                "gt" => result.push('>'),
-                "quot" => result.push('"'),
-                "apos" => result.push('\''),
-                "nbsp" => result.push(' '),
-                _ => {
-                    // Unknown entity, keep as-is
-                    result.push('&');
-                    result.push_str(&entity);
-                    result.push(';');
-                }
-            }
-        } else if in_entity {
-            entity.push(c);
-        } else if !in_tag {
-            result.push(c);
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(c),
+            _ => {}
         }
     }
+
+    // Decode HTML entities (handles &amp;, &lt;, &#123;, &#xAB;, etc.)
+    let decoded = html_escape::decode_html_entities(&result);
 
     // Normalize whitespace
-    let mut normalized = String::new();
-    let mut last_was_space = true;
-    for c in result.chars() {
-        if c.is_whitespace() {
-            if !last_was_space {
-                normalized.push(' ');
-                last_was_space = true;
-            }
-        } else {
-            normalized.push(c);
-            last_was_space = false;
-        }
-    }
-
-    normalized.trim().to_string()
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

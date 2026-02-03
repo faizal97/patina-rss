@@ -1,5 +1,4 @@
-use patina_core::{create_patina_core, hello_from_rust, PatinaCore};
-use std::fs;
+use patina_core::{create_patina_core, hello_from_rust};
 
 #[test]
 fn test_hello_from_rust() {

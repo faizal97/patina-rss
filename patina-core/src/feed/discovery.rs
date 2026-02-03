@@ -1,14 +1,11 @@
+use crate::feed::http::create_client;
 use crate::storage::models::DiscoveredFeed;
 use crate::PatinaError;
 use scraper::{Html, Selector};
 
 /// Discover RSS/Atom feeds from a website URL
 pub fn discover_feeds(website_url: &str) -> Result<Vec<DiscoveredFeed>, PatinaError> {
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("Patina RSS Reader/1.0")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-
+    let client = create_client()?;
     let response = client.get(website_url).send()?;
     let html = response.text()?;
 
