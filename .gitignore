@@ -41,6 +41,7 @@ DerivedData/
 
 # Build
 build/
+.build/
 *.o
 *.a
 

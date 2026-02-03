@@ -174,11 +174,14 @@ package_app() {
 
     echo -e "${CYAN}  → Packaging $arch...${NC}"
 
-    cd "$app_dir"
-    rm -f "$zip_name"
-    zip -r -q "$zip_name" Patina.app
+    # Use subshell to avoid changing the working directory
+    (
+        cd "$app_dir"
+        rm -f "$zip_name"
+        zip -r -q "$zip_name" Patina.app
+    )
 
-    local size=$(du -h "$zip_name" | cut -f1)
+    local size=$(du -h "$app_dir/$zip_name" | cut -f1)
     echo -e "${GREEN}    ✓ $zip_name ($size)${NC}"
 }
 
