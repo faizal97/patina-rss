@@ -53,7 +53,20 @@ stop-words = "0.8"
 uniffi = { version = "0.28", features = ["build"] }
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.15"
+
+[[bench]]
+name = "db_benchmarks"
+harness = false
+
+[[bench]]
+name = "parser_benchmarks"
+harness = false
+
+[[bench]]
+name = "topic_benchmarks"
+harness = false
 
 [[bin]]
 name = "uniffi-bindgen"

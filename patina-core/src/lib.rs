@@ -3,9 +3,9 @@ pub mod http;
 pub mod serendipity;
 pub mod storage;
 
+use std::sync::Arc;
 use storage::db::Database;
 use storage::models::{Article, DiscoveredFeed, Feed, OpmlImportResult, ReadingPattern};
-use std::sync::Arc;
 use thiserror::Error;
 
 // Use setup_scaffolding for proc-macro based bindings
@@ -229,7 +229,9 @@ impl PatinaCore {
     // Internal serendipity helper (not exported)
     fn serendipity_record_reading(&self, article: &Article) {
         // Extract topics and record reading
-        if let Ok(topics) = serendipity::patterns::extract_topics(&article.title, article.summary.as_deref()) {
+        if let Ok(topics) =
+            serendipity::patterns::extract_topics(&article.title, article.summary.as_deref())
+        {
             for topic in topics {
                 let _ = self.db.record_article_topic(article.id, &topic.0, topic.1);
             }

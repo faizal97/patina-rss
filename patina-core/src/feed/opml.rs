@@ -1,5 +1,5 @@
-use crate::storage::models::OpmlFeed;
 use crate::PatinaError;
+use crate::storage::models::OpmlFeed;
 
 /// Parse an OPML file and extract feed URLs
 pub fn parse_opml(content: &str) -> Result<Vec<OpmlFeed>, PatinaError> {

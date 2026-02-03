@@ -1,6 +1,6 @@
+use crate::PatinaError;
 use crate::feed::http::create_client;
 use crate::storage::models::{ParsedArticle, ParsedFeed};
-use crate::PatinaError;
 use feed_rs::parser;
 
 /// Fetch a feed from a URL and parse it
@@ -41,10 +41,7 @@ pub fn parse_feed_content(content: &[u8], url: &str) -> Result<ParsedFeed, Patin
             // Clean HTML from summary if present
             let summary = summary.map(|s| clean_html(&s));
 
-            let published_at = entry
-                .published
-                .or(entry.updated)
-                .map(|dt| dt.timestamp());
+            let published_at = entry.published.or(entry.updated).map(|dt| dt.timestamp());
 
             Some(ParsedArticle {
                 title: entry_title,
@@ -64,7 +61,7 @@ pub fn parse_feed_content(content: &[u8], url: &str) -> Result<ParsedFeed, Patin
 }
 
 /// Strip HTML tags and decode entities from a string
-fn clean_html(html: &str) -> String {
+pub fn clean_html(html: &str) -> String {
     // Strip HTML tags
     let mut result = String::new();
     let mut in_tag = false;

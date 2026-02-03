@@ -1,0 +1,156 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "patina-core/**"
+      - ".github/workflows/benchmarks.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "patina-core/**"
+      - ".github/workflows/benchmarks.yml"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: macos-14 # Apple Silicon runner
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: patina-core
+
+      - name: Run benchmarks
+        working-directory: patina-core
+        run: |
+          cargo bench --bench db_benchmarks -- --noplot --save-baseline pr-${{ github.event.number || github.sha }}
+          cargo bench --bench parser_benchmarks -- --noplot --save-baseline pr-${{ github.event.number || github.sha }}
+          cargo bench --bench topic_benchmarks -- --noplot --save-baseline pr-${{ github.event.number || github.sha }}
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rust Benchmarks
+          tool: "cargo"
+          output-file-path: patina-core/target/criterion/**/new/estimates.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          alert-threshold: "110%"
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: "@${{ github.repository_owner }}"
+          # Store baseline in gh-pages branch
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks
+
+      - name: Comment PR with benchmark results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Find benchmark results
+            const criterionDir = 'patina-core/target/criterion';
+            let summary = '## 📊 Benchmark Results\n\n';
+
+            const benchmarks = ['db_benchmarks', 'parser_benchmarks', 'topic_benchmarks'];
+
+            for (const bench of benchmarks) {
+              summary += `### ${bench.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}\n\n`;
+              const benchDir = path.join(criterionDir, bench);
+
+              if (fs.existsSync(benchDir)) {
+                const groups = fs.readdirSync(benchDir).filter(f => {
+                  const stat = fs.statSync(path.join(benchDir, f));
+                  return stat.isDirectory() && f !== 'report';
+                });
+
+                summary += '| Benchmark | Time (ns) |\n';
+                summary += '|-----------|----------:|\n';
+
+                for (const group of groups.slice(0, 10)) {
+                  const estimatesPath = path.join(benchDir, group, 'new', 'estimates.json');
+                  if (fs.existsSync(estimatesPath)) {
+                    try {
+                      const estimates = JSON.parse(fs.readFileSync(estimatesPath, 'utf8'));
+                      const meanNs = Math.round(estimates.mean.point_estimate);
+                      summary += `| ${group} | ${meanNs.toLocaleString()} |\n`;
+                    } catch (e) {
+                      // Skip if can't parse
+                    }
+                  }
+                }
+                summary += '\n';
+              }
+            }
+
+            summary += '\n<details>\n<summary>View full benchmark report</summary>\n\n';
+            summary += 'Run `cargo bench` locally and open `target/criterion/report/index.html` for detailed charts.\n';
+            summary += '</details>\n';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  benchmark-compare:
+    name: Compare with Baseline
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: patina-core
+
+      - name: Run baseline benchmarks
+        working-directory: patina-core
+        run: |
+          cargo bench --bench db_benchmarks -- --noplot --save-baseline main
+          cargo bench --bench parser_benchmarks -- --noplot --save-baseline main
+          cargo bench --bench topic_benchmarks -- --noplot --save-baseline main
+
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Compare benchmarks
+        working-directory: patina-core
+        run: |
+          echo "## Benchmark Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Run comparison (this will show improvements/regressions)
+          cargo bench --bench db_benchmarks -- --noplot --baseline main 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          cargo bench --bench parser_benchmarks -- --noplot --baseline main 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          cargo bench --bench topic_benchmarks -- --noplot --baseline main 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true

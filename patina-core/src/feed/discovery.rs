@@ -1,6 +1,6 @@
+use crate::PatinaError;
 use crate::feed::http::create_client;
 use crate::storage::models::DiscoveredFeed;
-use crate::PatinaError;
 use scraper::{Html, Selector};
 
 /// Discover RSS/Atom feeds from a website URL

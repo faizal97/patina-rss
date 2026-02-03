@@ -1,6 +1,6 @@
-use crate::storage::models::{Article, Feed, ParsedArticle, ParsedFeed, ReadingPattern};
 use crate::PatinaError;
-use rusqlite::{params, Connection, Row};
+use crate::storage::models::{Article, Feed, ParsedArticle, ParsedFeed, ReadingPattern};
+use rusqlite::{Connection, Row, params};
 use std::sync::Mutex;
 
 /// Maps a database row to a Feed struct.
@@ -41,6 +41,22 @@ pub struct Database {
 impl Database {
     pub fn new(path: &str) -> Result<Self, PatinaError> {
         let conn = Connection::open(path)?;
+
+        // Enable WAL mode for better concurrent read/write performance
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+
+        // Synchronous NORMAL is safe with WAL and much faster than FULL
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+
+        // Increase cache size (negative = KB, so -8000 = 8MB)
+        conn.pragma_update(None, "cache_size", -8000)?;
+
+        // Enable memory-mapped I/O for faster reads (64MB)
+        conn.pragma_update(None, "mmap_size", 67108864)?;
+
+        // Enable foreign keys
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -94,6 +110,12 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_articles_is_read ON articles(is_read);
             CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at);
             CREATE INDEX IF NOT EXISTS idx_article_topics_topic ON article_topics(topic);
+
+            -- Composite index for efficient unread count per feed
+            CREATE INDEX IF NOT EXISTS idx_articles_feed_unread ON articles(feed_id, is_read) WHERE is_read = 0;
+
+            -- Composite index for sorting articles by date
+            CREATE INDEX IF NOT EXISTS idx_articles_date_sort ON articles(COALESCE(published_at, fetched_at) DESC);
             "#,
         )?;
 
@@ -143,7 +165,9 @@ impl Database {
     pub fn get_all_feeds(&self) -> Result<Vec<Feed>, PatinaError> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(
+        // Correlated subquery is efficient here because it uses the partial covering index
+        // idx_articles_feed_unread which only indexes unread articles
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT f.id, f.title, f.url, f.site_url, f.last_fetched_at, f.created_at,
                    (SELECT COUNT(*) FROM articles a WHERE a.feed_id = f.id AND a.is_read = 0) as unread_count
@@ -195,7 +219,11 @@ impl Database {
     }
 
     // Article operations
-    pub fn insert_article(&self, feed_id: i64, article: &ParsedArticle) -> Result<Article, PatinaError> {
+    pub fn insert_article(
+        &self,
+        feed_id: i64,
+        article: &ParsedArticle,
+    ) -> Result<Article, PatinaError> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().timestamp();
 
@@ -251,7 +279,7 @@ impl Database {
     pub fn get_articles_for_feed(&self, feed_id: i64) -> Result<Vec<Article>, PatinaError> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
                    a.is_read, a.read_at, f.title as feed_title
@@ -272,7 +300,7 @@ impl Database {
     pub fn get_all_unread_articles(&self) -> Result<Vec<Article>, PatinaError> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
                    a.is_read, a.read_at, f.title as feed_title
@@ -294,7 +322,7 @@ impl Database {
     pub fn get_recent_articles(&self, limit: i32) -> Result<Vec<Article>, PatinaError> {
         let conn = self.conn.lock().unwrap();
 
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             r#"
             SELECT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
                    a.is_read, a.read_at, f.title as feed_title
@@ -402,7 +430,12 @@ impl Database {
     }
 
     // Article topics
-    pub fn record_article_topic(&self, article_id: i64, topic: &str, score: f64) -> Result<(), PatinaError> {
+    pub fn record_article_topic(
+        &self,
+        article_id: i64,
+        topic: &str,
+        score: f64,
+    ) -> Result<(), PatinaError> {
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
@@ -422,7 +455,7 @@ impl Database {
 
         if topics.is_empty() {
             // No patterns, return random unread articles
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 r#"
                 SELECT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
                        a.is_read, a.read_at, f.title as feed_title
@@ -441,37 +474,30 @@ impl Database {
             return Ok(articles);
         }
 
-        // Build query with topic matching
-        let placeholders: Vec<String> = topics.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
-        let query = format!(
+        // Use JSON array with json_each() - avoids temp table overhead and allows caching
+        let topics_json = serde_json::to_string(topics).unwrap_or_else(|_| "[]".to_string());
+
+        let mut stmt = conn.prepare_cached(
             r#"
-            SELECT DISTINCT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
+            SELECT a.id, a.feed_id, a.title, a.url, a.summary, a.published_at, a.fetched_at,
                    a.is_read, a.read_at, f.title as feed_title,
-                   COALESCE(SUM(at.score), 0) as topic_score
+                   COALESCE(topic_scores.total_score, 0) as topic_score
             FROM articles a
             JOIN feeds f ON f.id = a.feed_id
-            LEFT JOIN article_topics at ON at.article_id = a.id AND at.topic IN ({})
+            LEFT JOIN (
+                SELECT at.article_id, SUM(at.score) as total_score
+                FROM article_topics at
+                WHERE at.topic IN (SELECT value FROM json_each(?2))
+                GROUP BY at.article_id
+            ) topic_scores ON topic_scores.article_id = a.id
             WHERE a.is_read = 0
-            GROUP BY a.id
             ORDER BY topic_score DESC, RANDOM()
             LIMIT ?1
             "#,
-            placeholders.join(", ")
-        );
-
-        let mut stmt = conn.prepare(&query)?;
-
-        // Bind parameters
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        params_vec.push(Box::new(limit));
-        for topic in topics {
-            params_vec.push(Box::new(topic.clone()));
-        }
-
-        let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        )?;
 
         let articles = stmt
-            .query_map(refs.as_slice(), map_article_row)?
+            .query_map(params![limit, topics_json], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(articles)

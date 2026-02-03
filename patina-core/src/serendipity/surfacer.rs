@@ -1,6 +1,6 @@
+use crate::PatinaError;
 use crate::storage::db::Database;
 use crate::storage::models::Article;
-use crate::PatinaError;
 
 /// Get serendipitous articles based on reading patterns
 pub fn get_serendipity_articles(db: &Database, limit: i32) -> Result<Vec<Article>, PatinaError> {

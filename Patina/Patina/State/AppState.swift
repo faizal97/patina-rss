@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os.signpost
 
 /// Main application state using Swift 5.9 @Observable macro
 @MainActor
@@ -81,23 +82,26 @@ final class AppState {
 
     // MARK: - Feed Management
 
-    @MainActor
     func loadFeeds() async {
         guard let core else { return }
 
-        do {
-            feeds = try core.getAllFeeds()
-        } catch {
-            errorMessage = "Failed to load feeds: \(error.localizedDescription)"
+        await PerformanceSignpost.measure(.database, name: "LoadFeeds") {
+            do {
+                feeds = try core.getAllFeeds()
+            } catch {
+                errorMessage = "Failed to load feeds: \(error.localizedDescription)"
+            }
         }
     }
 
-    @MainActor
     func addFeed(url: String) async {
         guard let core else { return }
 
         isLoading = true
         defer { isLoading = false }
+
+        let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "AddFeed")
+        defer { PerformanceSignpost.end(.feedRefresh, name: "AddFeed", id: signpostId) }
 
         do {
             let feed = try core.addFeed(url: url)
@@ -122,7 +126,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func deleteFeed(_ feedId: Int64) async {
         guard let core else { return }
 
@@ -138,9 +141,11 @@ final class AppState {
         }
     }
 
-    @MainActor
     func refreshFeed(_ feedId: Int64) async {
         guard let core else { return }
+
+        let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "RefreshFeed")
+        defer { PerformanceSignpost.end(.feedRefresh, name: "RefreshFeed", id: signpostId, "Feed \(feedId)") }
 
         do {
             let updatedFeed = try core.refreshFeed(feedId: feedId)
@@ -155,12 +160,14 @@ final class AppState {
         }
     }
 
-    @MainActor
     func refreshAllFeeds() async {
         guard let core else { return }
 
         isLoading = true
         defer { isLoading = false }
+
+        let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "RefreshAllFeeds")
+        defer { PerformanceSignpost.end(.feedRefresh, name: "RefreshAllFeeds", id: signpostId, "\(feeds.count) feeds") }
 
         do {
             feeds = try core.refreshAllFeeds()
@@ -174,7 +181,6 @@ final class AppState {
 
     // MARK: - Feed Discovery
 
-    @MainActor
     func discoverFeeds(websiteUrl: String) async -> [DiscoveredFeed] {
         guard let core else { return [] }
 
@@ -188,21 +194,21 @@ final class AppState {
 
     // MARK: - Article Management
 
-    @MainActor
     func loadArticlesForSelectedFeed() async {
         guard let core, let feedId = selectedFeedId else {
             articles = []
             return
         }
 
-        do {
-            articles = try core.getArticlesForFeed(feedId: feedId)
-        } catch {
-            errorMessage = "Failed to load articles: \(error.localizedDescription)"
+        await PerformanceSignpost.measure(.database, name: "LoadArticles") {
+            do {
+                articles = try core.getArticlesForFeed(feedId: feedId)
+            } catch {
+                errorMessage = "Failed to load articles: \(error.localizedDescription)"
+            }
         }
     }
 
-    @MainActor
     func loadAllUnreadArticles() async {
         guard let core else { return }
 
@@ -213,7 +219,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func markArticleRead(_ articleId: Int64) async {
         guard let core else { return }
 
@@ -242,7 +247,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func markArticleUnread(_ articleId: Int64) async {
         guard let core else { return }
 
@@ -271,7 +275,6 @@ final class AppState {
 
     // MARK: - OPML Import
 
-    @MainActor
     func importOPML(content: String) async -> OpmlImportResult? {
         guard let core else { return nil }
 
@@ -290,18 +293,18 @@ final class AppState {
 
     // MARK: - Serendipity
 
-    @MainActor
     func loadSerendipityArticles() async {
         guard let core else { return }
 
-        do {
-            serendipityArticles = try core.getSerendipityArticles(limit: 20)
-        } catch {
-            errorMessage = "Failed to load serendipity articles: \(error.localizedDescription)"
+        await PerformanceSignpost.measure(.serendipity, name: "LoadSerendipity") {
+            do {
+                serendipityArticles = try core.getSerendipityArticles(limit: 20)
+            } catch {
+                errorMessage = "Failed to load serendipity articles: \(error.localizedDescription)"
+            }
         }
     }
 
-    @MainActor
     func loadRecentArticles() async {
         guard let core else { return }
 
@@ -312,7 +315,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func loadReadingPatterns() async {
         guard let core else { return }
 
@@ -323,7 +325,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func addReadingPattern(type: String, value: String) async {
         guard let core else { return }
 
@@ -335,7 +336,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func deleteReadingPattern(_ patternId: Int64) async {
         guard let core else { return }
 
@@ -347,7 +347,6 @@ final class AppState {
         }
     }
 
-    @MainActor
     func resetReadingPatterns() async {
         guard let core else { return }
 

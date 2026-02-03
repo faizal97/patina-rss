@@ -1,11 +1,14 @@
-use crate::storage::db::Database;
 use crate::PatinaError;
+use crate::storage::db::Database;
 use std::collections::HashMap;
-use stop_words::{get, LANGUAGE};
+use stop_words::{LANGUAGE, get};
 
 /// Extract topics from article title and summary
 /// Returns a list of (topic, score) tuples
-pub fn extract_topics(title: &str, summary: Option<&str>) -> Result<Vec<(String, f64)>, PatinaError> {
+pub fn extract_topics(
+    title: &str,
+    summary: Option<&str>,
+) -> Result<Vec<(String, f64)>, PatinaError> {
     let mut word_counts: HashMap<String, usize> = HashMap::new();
 
     // Process title (higher weight)

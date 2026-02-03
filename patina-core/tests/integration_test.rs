@@ -102,8 +102,10 @@ fn test_opml_import() {
 
     match result {
         Ok(r) => {
-            println!("✓ OPML import complete: {} total, {} imported, {} failed",
-                     r.total_feeds, r.imported_feeds, r.failed_feeds);
+            println!(
+                "✓ OPML import complete: {} total, {} imported, {} failed",
+                r.total_feeds, r.imported_feeds, r.failed_feeds
+            );
             assert_eq!(r.total_feeds, 1);
         }
         Err(e) => {
@@ -120,8 +122,13 @@ fn test_reading_patterns() {
     let core = create_patina_core(db_path.to_string_lossy().to_string()).unwrap();
 
     // Add a pattern
-    let pattern = core.add_reading_pattern("topic".to_string(), "rust".to_string()).unwrap();
-    println!("✓ Added pattern: {} = {}", pattern.pattern_type, pattern.value);
+    let pattern = core
+        .add_reading_pattern("topic".to_string(), "rust".to_string())
+        .unwrap();
+    println!(
+        "✓ Added pattern: {} = {}",
+        pattern.pattern_type, pattern.value
+    );
 
     // Get patterns
     let patterns = core.get_reading_patterns().unwrap();
@@ -135,8 +142,10 @@ fn test_reading_patterns() {
     println!("✓ Pattern deleted");
 
     // Reset patterns
-    core.add_reading_pattern("topic".to_string(), "swift".to_string()).unwrap();
-    core.add_reading_pattern("keyword".to_string(), "apple".to_string()).unwrap();
+    core.add_reading_pattern("topic".to_string(), "swift".to_string())
+        .unwrap();
+    core.add_reading_pattern("keyword".to_string(), "apple".to_string())
+        .unwrap();
     core.reset_reading_patterns().unwrap();
     let patterns = core.get_reading_patterns().unwrap();
     assert!(patterns.is_empty());
