@@ -2,6 +2,17 @@ import Foundation
 import Observation
 import os.signpost
 
+// MARK: - Thread Safety for UniFFI Types
+
+/// PatinaCore is thread-safe (uses Arc<Mutex> internally in Rust)
+/// These extensions allow UniFFI types to be used across Swift concurrency boundaries
+extension PatinaCore: @unchecked Sendable {}
+extension Feed: @unchecked Sendable {}
+extension Article: @unchecked Sendable {}
+extension DiscoveredFeed: @unchecked Sendable {}
+extension OpmlImportResult: @unchecked Sendable {}
+extension ReadingPattern: @unchecked Sendable {}
+
 /// Main application state using Swift 5.9 @Observable macro
 @MainActor
 @Observable
@@ -98,13 +109,15 @@ final class AppState {
         guard let core else { return }
 
         isLoading = true
-        defer { isLoading = false }
 
         let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "AddFeed")
-        defer { PerformanceSignpost.end(.feedRefresh, name: "AddFeed", id: signpostId) }
 
         do {
-            let feed = try core.addFeed(url: url)
+            // Run blocking Rust call on background thread to keep UI responsive
+            let feed = try await Task.detached(priority: .userInitiated) {
+                try core.addFeed(url: url)
+            }.value
+
             feeds.append(feed)
             feeds.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             selectedFeedId = feed.id
@@ -124,6 +137,9 @@ final class AppState {
         } catch {
             errorMessage = "Failed to add feed: \(error.localizedDescription)"
         }
+
+        PerformanceSignpost.end(.feedRefresh, name: "AddFeed", id: signpostId)
+        isLoading = false
     }
 
     func deleteFeed(_ feedId: Int64) async {
@@ -145,10 +161,13 @@ final class AppState {
         guard let core else { return }
 
         let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "RefreshFeed")
-        defer { PerformanceSignpost.end(.feedRefresh, name: "RefreshFeed", id: signpostId, "Feed \(feedId)") }
 
         do {
-            let updatedFeed = try core.refreshFeed(feedId: feedId)
+            // Run blocking Rust call on background thread to keep UI responsive
+            let updatedFeed = try await Task.detached(priority: .userInitiated) {
+                try core.refreshFeed(feedId: feedId)
+            }.value
+
             if let index = feeds.firstIndex(where: { $0.id == feedId }) {
                 feeds[index] = updatedFeed
             }
@@ -158,25 +177,34 @@ final class AppState {
         } catch {
             errorMessage = "Failed to refresh feed: \(error.localizedDescription)"
         }
+
+        PerformanceSignpost.end(.feedRefresh, name: "RefreshFeed", id: signpostId, "Feed \(feedId)")
     }
 
     func refreshAllFeeds() async {
         guard let core else { return }
 
         isLoading = true
-        defer { isLoading = false }
 
         let signpostId = PerformanceSignpost.begin(.feedRefresh, name: "RefreshAllFeeds")
-        defer { PerformanceSignpost.end(.feedRefresh, name: "RefreshAllFeeds", id: signpostId, "\(feeds.count) feeds") }
+        let feedCount = feeds.count
 
         do {
-            feeds = try core.refreshAllFeeds()
+            // Run blocking Rust call on background thread to keep UI responsive
+            let refreshedFeeds = try await Task.detached(priority: .userInitiated) {
+                try core.refreshAllFeeds()
+            }.value
+
+            feeds = refreshedFeeds
             if selectedFeedId != nil {
                 await loadArticlesForSelectedFeed()
             }
         } catch {
             errorMessage = "Failed to refresh feeds: \(error.localizedDescription)"
         }
+
+        PerformanceSignpost.end(.feedRefresh, name: "RefreshAllFeeds", id: signpostId, "\(feedCount) feeds")
+        isLoading = false
     }
 
     // MARK: - Feed Discovery
@@ -185,7 +213,10 @@ final class AppState {
         guard let core else { return [] }
 
         do {
-            return try core.discoverFeeds(websiteUrl: websiteUrl)
+            // Run blocking Rust call on background thread to keep UI responsive
+            return try await Task.detached(priority: .userInitiated) {
+                try core.discoverFeeds(websiteUrl: websiteUrl)
+            }.value
         } catch {
             errorMessage = "Failed to discover feeds: \(error.localizedDescription)"
             return []
@@ -279,14 +310,19 @@ final class AppState {
         guard let core else { return nil }
 
         isLoading = true
-        defer { isLoading = false }
 
         do {
-            let result = try core.importOpml(opmlContent: content)
+            // Run blocking Rust call on background thread to keep UI responsive
+            let result = try await Task.detached(priority: .userInitiated) {
+                try core.importOpml(opmlContent: content)
+            }.value
+
             await loadFeeds()
+            isLoading = false
             return result
         } catch {
             errorMessage = "Failed to import OPML: \(error.localizedDescription)"
+            isLoading = false
             return nil
         }
     }
