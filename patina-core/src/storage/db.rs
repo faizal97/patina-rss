@@ -115,7 +115,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_articles_feed_unread ON articles(feed_id, is_read) WHERE is_read = 0;
 
             -- Composite index for sorting articles by date
-            CREATE INDEX IF NOT EXISTS idx_articles_date_sort ON articles(COALESCE(published_at, fetched_at) DESC);
+            CREATE INDEX IF NOT EXISTS idx_articles_date_sort ON articles(published_at DESC);
             "#,
         )?;
 
@@ -307,7 +307,7 @@ impl Database {
             FROM articles a
             JOIN feeds f ON f.id = a.feed_id
             WHERE a.is_read = 0
-            ORDER BY COALESCE(a.published_at, a.fetched_at) DESC
+            ORDER BY a.published_at IS NULL, a.published_at DESC
             "#,
         )?;
 
@@ -328,7 +328,7 @@ impl Database {
                    a.is_read, a.read_at, f.title as feed_title
             FROM articles a
             JOIN feeds f ON f.id = a.feed_id
-            ORDER BY COALESCE(a.published_at, a.fetched_at) DESC
+            ORDER BY a.published_at IS NULL, a.published_at DESC
             LIMIT ?1
             "#,
         )?;
