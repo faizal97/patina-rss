@@ -18,6 +18,10 @@
 - `xcodegen generate` - Regenerate Xcode project from project.yml
 - `open ~/Library/Developer/Xcode/DerivedData/Patina-*/Build/Products/Debug/Patina.app` - Run the app
 
+## Release Commands
+- `./scripts/release.sh [major|minor|patch]` - Full release: bump version, build all archs, push, create GitHub release with binaries
+- `./scripts/bump-version.sh [major|minor|patch]` - Just bump version in Cargo.toml and project.yml
+
 ## Key Files
 | Purpose | Path |
 |---------|------|
@@ -37,6 +41,8 @@
 - UniFFI generates `private var initializationResult` - must patch to `nonisolated(unsafe) private var initializationResult` in build-rust.sh
 - WKNavigationDelegate closures need `@MainActor @Sendable` annotation
 - AppState class requires `@MainActor` annotation for strict concurrency
+- UniFFI types need `@unchecked Sendable` extension for use with `Task.detached`
+- Blocking FFI calls (network I/O) must use `Task.detached` to avoid freezing UI
 
 ## XcodeGen (project.yml)
 - System frameworks: Use `sdk: Framework.framework` (not `framework: X implicit: true`)
